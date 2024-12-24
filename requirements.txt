@@ -1,3 +1,4 @@
 Flask
-pytube
 yt-dlp
+instaloader
+facebook-sdk
