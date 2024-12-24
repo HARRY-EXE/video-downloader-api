@@ -1,77 +1,84 @@
-from flask import Flask, request, jsonify, send_file
-import tempfile
+from flask import Flask, request, jsonify
+import yt_dlp as youtube_dl
+import instaloader
+import facebook
+import re
 import os
-
-try:
-    from pytube import YouTube
-    import yt_dlp  # For TikTok, Instagram, Facebook, and other platforms
-except ImportError:
-    raise ImportError("Please install 'pytube' and 'yt_dlp' libraries to proceed.")
 
 app = Flask(__name__)
 
+# Helper functions to download content from each platform
 
-def download_youtube(link):
-    """Download YouTube video."""
+def download_youtube_video(url):
     try:
-        yt = YouTube(link)
-        stream = yt.streams.get_highest_resolution()  # Ensure the best resolution is selected
-        
-        # Create a temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-        file_path = stream.download(output_path=temp_file.name)
-        return {"status": "success", "file_path": file_path}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-def download_with_ytdlp(link):
-    """Download video using yt-dlp."""
-    try:
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
         ydl_opts = {
-            'outtmpl': temp_file.name,  # Save the video to the temporary file
-            'format': 'bestvideo+bestaudio/best',  # Ensure the best quality is selected
-            'postprocessors': [{  # For merging video and audio (if needed)
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4',
-            }],
+            'format': 'bestvideo+bestaudio/best',
+            'outtmpl': 'downloads/%(title)s.%(ext)s',
         }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([link])
-        
-        return {"status": "success", "file_path": temp_file.name}
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=True)
+            return {"message": "Video downloaded", "filename": info_dict['title'] + "." + info_dict['ext']}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"error": str(e)}
 
+def download_instagram_post(url):
+    try:
+        loader = instaloader.Instaloader()
+        post = instaloader.Post.from_url(loader.context, url)
+        filename = f"downloads/{post.shortcode}.jpg"
+        loader.download_post(post, target=filename)
+        return {"message": "Post downloaded", "filename": filename}
+    except Exception as e:
+        return {"error": str(e)}
 
+def download_facebook_video(url):
+    try:
+        # You'll need a Facebook access token
+        access_token = 'your_facebook_access_token'
+        graph = facebook.GraphAPI(access_token)
+        video_id = re.search(r"video.php\?v=(\d+)", url).group(1)
+        video = graph.get_object(f"{video_id}?fields=source")
+        video_url = video['source']
+        # Using yt-dlp to download the video
+        ydl_opts = {'outtmpl': 'downloads/facebook_video.%(ext)s'}
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([video_url])
+        return {"message": "Facebook video downloaded"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def download_tiktok_video(url):
+    try:
+        # Using yt-dlp to download TikTok video
+        ydl_opts = {'outtmpl': 'downloads/tiktok_video.%(ext)s'}
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        return {"message": "TikTok video downloaded"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Flask route to handle video downloads
 @app.route('/download', methods=['GET'])
 def download_video():
-    """Handle video download requests."""
-    # Get the URL from the query parameter
-    link = request.args.get('url')
+    url = request.args.get('url', '')
+    if not url:
+        return jsonify({"error": "URL is required"}), 400
 
-    if not link:
-        return jsonify({"status": "error", "message": "Link not provided"}), 400
-
-    # Check the platform
-    if "youtube.com" in link or "youtu.be" in link:
-        result = download_youtube(link)
-    elif "tiktok.com" in link or "instagram.com" in link or "facebook.com" in link:
-        result = download_with_ytdlp(link)
+    # Determine the platform based on the URL
+    if 'youtube.com' in url or 'youtu.be' in url:
+        result = download_youtube_video(url)
+    elif 'instagram.com' in url:
+        result = download_instagram_post(url)
+    elif 'facebook.com' in url:
+        result = download_facebook_video(url)
+    elif 'tiktok.com' in url:
+        result = download_tiktok_video(url)
     else:
-        return jsonify({"status": "error", "message": "Unsupported platform"}), 400
+        return jsonify({"error": "Unsupported platform"}), 400
 
-    if result["status"] == "success":
-        # Serve the file directly
-        return send_file(result["file_path"], as_attachment=True)
-    else:
-        return jsonify(result), 500
-
+    return jsonify(result)
 
 if __name__ == '__main__':
-    # Use host and port from the environment for Vercel
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    if not os.path.exists('downloads'):
+        os.makedirs('downloads')
+    app.run(debug=True)
