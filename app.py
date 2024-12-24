@@ -39,12 +39,12 @@ def download_with_ytdlp(link):
         return {"status": "error", "message": str(e)}
 
 
-@app.route('/download', methods=['POST'])
+@app.route('/download', methods=['GET'])
 def download_video():
     """Handle video download requests."""
-    data = request.json
-    link = data.get('link')
-    
+    # Get the URL from the query parameter
+    link = request.args.get('url')
+
     if not link:
         return jsonify({"status": "error", "message": "Link not provided"}), 400
 
