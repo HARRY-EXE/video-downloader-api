@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_file
 import tempfile
+import os
 
 try:
     from pytube import YouTube
@@ -14,7 +15,7 @@ def download_youtube(link):
     """Download YouTube video."""
     try:
         yt = YouTube(link)
-        stream = yt.streams.get_highest_resolution()
+        stream = yt.streams.get_highest_resolution()  # Ensure the best resolution is selected
         
         # Create a temporary file
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
@@ -29,11 +30,17 @@ def download_with_ytdlp(link):
     try:
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
         ydl_opts = {
-            'outtmpl': temp_file.name,
-            'format': 'best',
+            'outtmpl': temp_file.name,  # Save the video to the temporary file
+            'format': 'bestvideo+bestaudio/best',  # Ensure the best quality is selected
+            'postprocessors': [{  # For merging video and audio (if needed)
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }],
         }
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([link])
+        
         return {"status": "success", "file_path": temp_file.name}
     except Exception as e:
         return {"status": "error", "message": str(e)}
