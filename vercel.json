@@ -8,7 +8,8 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/download",
+      "methods": ["GET"],
       "dest": "app.py"
     }
   ]
